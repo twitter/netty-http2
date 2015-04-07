@@ -46,25 +46,25 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
     private static final int DEFAULT_HEADER_TABLE_SIZE = 4096;
 
     private static final int DEFAULT_WINDOW_SIZE = 65535;
-    private volatile int initialSendWindowSize = DEFAULT_WINDOW_SIZE;
-    private volatile int initialReceiveWindowSize = DEFAULT_WINDOW_SIZE;
+    private int initialSendWindowSize = DEFAULT_WINDOW_SIZE;
+    private int initialReceiveWindowSize = DEFAULT_WINDOW_SIZE;
 
     private final HttpConnection httpConnection =
             new HttpConnection(initialSendWindowSize, initialReceiveWindowSize);
-    private volatile int lastStreamId;
+    private int lastStreamId;
 
     private static final int DEFAULT_MAX_CONCURRENT_STREAMS = Integer.MAX_VALUE;
-    private volatile int remoteConcurrentStreams = DEFAULT_MAX_CONCURRENT_STREAMS;
-    private volatile int localConcurrentStreams = DEFAULT_MAX_CONCURRENT_STREAMS;
+    private int remoteConcurrentStreams = DEFAULT_MAX_CONCURRENT_STREAMS;
+    private int localConcurrentStreams = DEFAULT_MAX_CONCURRENT_STREAMS;
 
     private final Object flowControlLock = new Object();
 
-    private volatile boolean sentGoAwayFrame;
-    private volatile boolean receivedGoAwayFrame;
+    private boolean sentGoAwayFrame;
+    private boolean receivedGoAwayFrame;
 
     private final ChannelFutureListener connectionErrorListener =
             new ConnectionErrorFutureListener();
-    private volatile ChannelFutureListener closingChannelFutureListener;
+    private ChannelFutureListener closingChannelFutureListener;
 
     private final boolean server;
 
@@ -78,15 +78,15 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
 
     private boolean needSettingsAck;
 
-    private volatile boolean changeDecoderHeaderTableSize;
-    private volatile int headerTableSize;
+    private boolean changeDecoderHeaderTableSize;
+    private int headerTableSize;
 
     private boolean changeEncoderHeaderTableSize;
     private int lastHeaderTableSize = Integer.MAX_VALUE;
     private int minHeaderTableSize = Integer.MAX_VALUE;
     private boolean pushEnabled = true;
 
-    private volatile ChannelHandlerContext context;
+    private ChannelHandlerContext context;
 
     /**
      * Creates a new connection handler.

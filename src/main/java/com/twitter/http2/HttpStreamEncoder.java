@@ -38,7 +38,7 @@ public class HttpStreamEncoder extends ChannelOutboundHandlerAdapter {
 
     private static final int MAX_DATA_LENGTH = 0x2000; // Limit Data Frames to 8k
 
-    private volatile int currentStreamId;
+    private int currentStreamId;
 
     @Override
     public void write(final ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
@@ -165,7 +165,7 @@ public class HttpStreamEncoder extends ChannelOutboundHandlerAdapter {
     }
 
     /**
-     * Writes an HTTP chunk downstream as one or more SPDY frames.
+     * Writes an HTTP chunk downstream as one or more HTTP/2 frames.
      */
     protected void writeChunk(
             ChannelHandlerContext ctx, ChannelPromise future, int streamId, HttpContent content) {

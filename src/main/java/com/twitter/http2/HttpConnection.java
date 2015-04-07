@@ -276,11 +276,11 @@ final class HttpConnection {
 
     private static final class StreamState {
 
-        private volatile boolean remoteSideClosed;
-        private volatile boolean localSideClosed;
+        private boolean remoteSideClosed;
+        private boolean localSideClosed;
         private final AtomicInteger sendWindowSize;
         private final AtomicInteger receiveWindowSize;
-        private volatile int receiveWindowSizeLowerBound;
+        private int receiveWindowSizeLowerBound;
         private final ConcurrentLinkedQueue<PendingWrite> pendingWriteQueue =
                 new ConcurrentLinkedQueue<PendingWrite>();
 
