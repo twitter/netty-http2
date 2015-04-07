@@ -24,6 +24,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import io.netty.channel.ChannelPromise;
+import io.netty.util.internal.EmptyArrays;
 
 import static com.twitter.http2.HttpCodecUtil.HTTP_DEFAULT_WEIGHT;
 import static com.twitter.http2.HttpCodecUtil.HTTP_CONNECTION_STREAM_ID;
@@ -32,6 +33,10 @@ final class HttpConnection {
 
     private static final HttpProtocolException STREAM_CLOSED =
             new HttpProtocolException("Stream closed");
+
+    static {
+        STREAM_CLOSED.setStackTrace(EmptyArrays.EMPTY_STACK_TRACE);
+    }
 
     private final AtomicInteger activeLocalStreams = new AtomicInteger();
     private final AtomicInteger activeRemoteStreams = new AtomicInteger();

@@ -27,6 +27,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandler;
 import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.ByteToMessageDecoder;
+import io.netty.util.internal.EmptyArrays;
 
 import static com.twitter.http2.HttpCodecUtil.HTTP_CONNECTION_STREAM_ID;
 import static com.twitter.http2.HttpCodecUtil.isServerId;
@@ -39,6 +40,10 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
 
     private static final HttpProtocolException PROTOCOL_EXCEPTION =
             new HttpProtocolException();
+
+    static {
+        PROTOCOL_EXCEPTION.setStackTrace(EmptyArrays.EMPTY_STACK_TRACE);
+    }
 
     private static final HttpSettingsFrame SETTINGS_ACK_FRAME =
             new DefaultHttpSettingsFrame().setAck(true);
@@ -409,7 +414,6 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
             }
             break;
         default:
-            // TODO(jpinner) VERIFY THIS BEHAVIOR
             // Ignore Unknown Settings
         }
     }
@@ -488,7 +492,6 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
      */
     @Override
     public void readWindowUpdateFrame(int streamId, int windowSizeIncrement) {
-        //
         // HTTP/2 WINDOW_UPDATE frame processing requirements:
         //
         // Receivers of a WINDOW_UPDATE that cause the window size to exceed 2^31
@@ -496,8 +499,6 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
         //
         // Sender should ignore all WINDOW_UPDATE frames associated with a stream
         // after sending the last frame for the stream.
-        //
-        // TODO(jpinner) handle disabled flow control
 
         // Ignore frames for half-closed streams
         if (streamId != HTTP_CONNECTION_STREAM_ID && httpConnection.isLocalSideClosed(streamId)) {
