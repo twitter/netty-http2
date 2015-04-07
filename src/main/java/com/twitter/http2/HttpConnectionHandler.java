@@ -53,6 +53,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
     private static final int DEFAULT_WINDOW_SIZE = 65535;
     private int initialSendWindowSize = DEFAULT_WINDOW_SIZE;
     private int initialReceiveWindowSize = DEFAULT_WINDOW_SIZE;
+    private volatile int initialConnectionReceiveWindowSize = DEFAULT_WINDOW_SIZE;
 
     private final HttpConnection httpConnection =
             new HttpConnection(initialSendWindowSize, initialReceiveWindowSize);
@@ -131,6 +132,19 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
         httpHeaderBlockEncoder = new HttpHeaderBlockEncoder(DEFAULT_HEADER_TABLE_SIZE);
     }
 
+    public void setConnectionReceiveWindowSize(int connectionReceiveWindowSize) {
+      if (connectionReceiveWindowSize < 0) {
+          throw new IllegalArgumentException("connectionReceiveWindowSize");
+      }
+      // This will not send a window update frame immediately.
+      // If this value increases the allowed receive window size,
+      // a WINDOW_UPDATE frame will be sent when only half of the
+      // session window size remains during data frame processing.
+      // If this value decreases the allowed receive window size,
+      // the window will be reduced as data frames are processed.
+      initialConnectionReceiveWindowSize = connectionReceiveWindowSize;
+    }
+
     @Override
     public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
         super.handlerAdded(ctx);
@@ -158,8 +172,8 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
         }
 
         // Send a WINDOW_UPDATE frame if less than half the connection window size remains
-        if (newConnectionWindowSize <= initialReceiveWindowSize / 2) {
-            int windowSizeIncrement = initialReceiveWindowSize - newConnectionWindowSize;
+        if (newConnectionWindowSize <= initialConnectionReceiveWindowSize / 2) {
+            int windowSizeIncrement = initialConnectionReceiveWindowSize - newConnectionWindowSize;
             httpConnection.updateReceiveWindowSize(HTTP_CONNECTION_STREAM_ID, windowSizeIncrement);
             ByteBuf frame = httpFrameEncoder.encodeWindowUpdateFrame(
                     HTTP_CONNECTION_STREAM_ID, windowSizeIncrement);
@@ -229,8 +243,8 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
         }
 
         // Send a WINDOW_UPDATE frame if less than half the connection window size remains
-        if (newConnectionWindowSize <= initialReceiveWindowSize / 2) {
-            int windowSizeIncrement = initialReceiveWindowSize - newConnectionWindowSize;
+        if (newConnectionWindowSize <= initialConnectionReceiveWindowSize / 2) {
+            int windowSizeIncrement = initialConnectionReceiveWindowSize - newConnectionWindowSize;
             httpConnection.updateReceiveWindowSize(HTTP_CONNECTION_STREAM_ID, windowSizeIncrement);
             ByteBuf frame = httpFrameEncoder.encodeWindowUpdateFrame(
                     HTTP_CONNECTION_STREAM_ID, windowSizeIncrement);
