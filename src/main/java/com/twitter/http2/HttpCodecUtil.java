@@ -45,7 +45,7 @@ final class HttpCodecUtil {
 
     static final int HTTP_SETTINGS_MAX_ID = 0xFFFF; // Identifier is a 16-bit field
 
-    static final int HTTP_SESSION_STREAM_ID = 0;
+    static final int HTTP_CONNECTION_STREAM_ID = 0;
 
     /**
      * Reads a big-endian unsigned short integer from the buffer.

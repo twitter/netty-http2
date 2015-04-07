@@ -242,7 +242,7 @@ public class HttpFrameEncoderTest {
 
     @Test
     public void testHttpWindowUpdateFrame() throws Exception {
-        int streamId = RANDOM.nextInt() & 0x7FFFFFFF; // session identifier allowed
+        int streamId = RANDOM.nextInt() & 0x7FFFFFFF; // connection identifier allowed
         int windowSizeIncrement = RANDOM.nextInt() & 0x7FFFFFFF | 0x01;
         ByteBuf frame = releaseLater(
                 ENCODER.encodeWindowUpdateFrame(streamId, windowSizeIncrement)

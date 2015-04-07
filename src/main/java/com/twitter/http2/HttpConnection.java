@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import io.netty.channel.ChannelPromise;
 
 import static com.twitter.http2.HttpCodecUtil.HTTP_DEFAULT_WEIGHT;
-import static com.twitter.http2.HttpCodecUtil.HTTP_SESSION_STREAM_ID;
+import static com.twitter.http2.HttpCodecUtil.HTTP_CONNECTION_STREAM_ID;
 
 final class HttpConnection {
 
@@ -41,7 +41,7 @@ final class HttpConnection {
     private final AtomicInteger receiveWindowSize;
 
     public HttpConnection(int sendWindowSize, int receiveWindowSize) {
-        streams.put(HTTP_SESSION_STREAM_ID, new Node(null));
+        streams.put(HTTP_CONNECTION_STREAM_ID, new Node(null));
         this.sendWindowSize = new AtomicInteger(sendWindowSize);
         this.receiveWindowSize = new AtomicInteger(receiveWindowSize);
     }
@@ -67,7 +67,7 @@ final class HttpConnection {
                     remoteSideClosed, localSideClosed, streamSendWindowSize, streamReceiveWindowSize);
         }
         Node node = new Node(state);
-        node.parent = streams.get(HTTP_SESSION_STREAM_ID);
+        node.parent = streams.get(HTTP_CONNECTION_STREAM_ID);
         streams.put(streamId, node);
         if (state != null) {
             if (remote) {
@@ -135,7 +135,7 @@ final class HttpConnection {
     }
 
     int getSendWindowSize(int streamId) {
-        if (streamId == HTTP_SESSION_STREAM_ID) {
+        if (streamId == HTTP_CONNECTION_STREAM_ID) {
             return sendWindowSize.get();
         }
 
@@ -145,7 +145,7 @@ final class HttpConnection {
     }
 
     int updateSendWindowSize(int streamId, int deltaWindowSize) {
-        if (streamId == HTTP_SESSION_STREAM_ID) {
+        if (streamId == HTTP_CONNECTION_STREAM_ID) {
             return sendWindowSize.addAndGet(deltaWindowSize);
         }
 
@@ -155,7 +155,7 @@ final class HttpConnection {
     }
 
     int updateReceiveWindowSize(int streamId, int deltaWindowSize) {
-        if (streamId == HTTP_SESSION_STREAM_ID) {
+        if (streamId == HTTP_CONNECTION_STREAM_ID) {
             return receiveWindowSize.addAndGet(deltaWindowSize);
         }
 
@@ -168,7 +168,7 @@ final class HttpConnection {
     }
 
     int getReceiveWindowSizeLowerBound(int streamId) {
-        if (streamId == HTTP_SESSION_STREAM_ID) {
+        if (streamId == HTTP_CONNECTION_STREAM_ID) {
             return 0;
         }
 
@@ -205,9 +205,9 @@ final class HttpConnection {
     }
 
     PendingWrite getPendingWrite(int streamId) {
-        if (streamId == HTTP_SESSION_STREAM_ID) {
-            Node session = streams.get(HTTP_SESSION_STREAM_ID);
-            return getPendingWrite(session);
+        if (streamId == HTTP_CONNECTION_STREAM_ID) {
+            Node connection = streams.get(HTTP_CONNECTION_STREAM_ID);
+            return getPendingWrite(connection);
         }
 
         Node stream = streams.get(streamId);
@@ -253,7 +253,7 @@ final class HttpConnection {
             stream.parent.removeDependent(stream);
 
             // set to default priority
-            Node root = streams.get(HTTP_SESSION_STREAM_ID);
+            Node root = streams.get(HTTP_CONNECTION_STREAM_ID);
             root.addDependent(false, stream);
             stream.setWeight(HTTP_DEFAULT_WEIGHT);
             return false;

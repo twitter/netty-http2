@@ -104,7 +104,7 @@ public interface HttpFrameDecoderDelegate {
     void readHeaderBlockEnd();
 
     /**
-     * Called when an unrecoverable session error has occurred.
+     * Called when an unrecoverable connection error has occurred.
      */
     void readFrameError(String message);
 }

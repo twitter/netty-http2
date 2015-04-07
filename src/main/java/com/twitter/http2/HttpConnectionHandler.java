@@ -28,7 +28,7 @@ import io.netty.channel.ChannelOutboundHandler;
 import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.ByteToMessageDecoder;
 
-import static com.twitter.http2.HttpCodecUtil.HTTP_SESSION_STREAM_ID;
+import static com.twitter.http2.HttpCodecUtil.HTTP_CONNECTION_STREAM_ID;
 import static com.twitter.http2.HttpCodecUtil.isServerId;
 
 /**
@@ -64,7 +64,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
 
     private final ChannelFutureListener connectionErrorListener =
             new ConnectionErrorFutureListener();
-    private volatile ChannelFutureListener closeSessionFutureListener;
+    private volatile ChannelFutureListener closingChannelFutureListener;
 
     private final boolean server;
 
@@ -128,21 +128,21 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
     @Override
     public void readDataFramePadding(int streamId, boolean endStream, int padding) {
         int deltaWindowSize = -1 * padding;
-        int newSessionWindowSize = httpConnection.updateReceiveWindowSize(
-                HTTP_SESSION_STREAM_ID, deltaWindowSize);
+        int newConnectionWindowSize = httpConnection.updateReceiveWindowSize(
+                HTTP_CONNECTION_STREAM_ID, deltaWindowSize);
 
-        // Check if session window size is reduced beyond allowable lower bound
-        if (newSessionWindowSize < 0) {
+        // Check if connection window size is reduced beyond allowable lower bound
+        if (newConnectionWindowSize < 0) {
             issueConnectionError(HttpErrorCode.PROTOCOL_ERROR);
             return;
         }
 
-        // Send a WINDOW_UPDATE frame if less than half the session window size remains
-        if (newSessionWindowSize <= initialReceiveWindowSize / 2) {
-            int windowSizeIncrement = initialReceiveWindowSize - newSessionWindowSize;
-            httpConnection.updateReceiveWindowSize(HTTP_SESSION_STREAM_ID, windowSizeIncrement);
+        // Send a WINDOW_UPDATE frame if less than half the connection window size remains
+        if (newConnectionWindowSize <= initialReceiveWindowSize / 2) {
+            int windowSizeIncrement = initialReceiveWindowSize - newConnectionWindowSize;
+            httpConnection.updateReceiveWindowSize(HTTP_CONNECTION_STREAM_ID, windowSizeIncrement);
             ByteBuf frame = httpFrameEncoder.encodeWindowUpdateFrame(
-                    HTTP_SESSION_STREAM_ID, windowSizeIncrement);
+                    HTTP_CONNECTION_STREAM_ID, windowSizeIncrement);
             context.writeAndFlush(frame);
         }
 
@@ -162,7 +162,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
         // Window size can become negative if we sent a SETTINGS frame that reduces the
         // size of the transfer window after the peer has written data frames.
         // The value is bounded by the length that SETTINGS frame decrease the window.
-        // This difference is stored for the session when writing the SETTINGS frame
+        // This difference is stored for the connection when writing the SETTINGS frame
         // and is cleared once we send a WINDOW_UPDATE frame.
         if (newWindowSize < httpConnection.getReceiveWindowSizeLowerBound(streamId)) {
             issueStreamError(streamId, HttpErrorCode.FLOW_CONTROL_ERROR);
@@ -191,7 +191,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
         // with the error code INVALID_STREAM for the Stream-ID.
         //
         // If an endpoint receives multiple data frames for invalid Stream-IDs,
-        // it may close the session.
+        // it may close the connection.
         //
         // If an endpoint refuses a stream it must ignore any data frames for that stream.
         //
@@ -199,21 +199,21 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
         // or closed, it must respond with a stream error of type STREAM_CLOSED.
 
         int deltaWindowSize = -1 * data.readableBytes();
-        int newSessionWindowSize = httpConnection.updateReceiveWindowSize(
-                HTTP_SESSION_STREAM_ID, deltaWindowSize);
+        int newConnectionWindowSize = httpConnection.updateReceiveWindowSize(
+                HTTP_CONNECTION_STREAM_ID, deltaWindowSize);
 
-        // Check if session window size is reduced beyond allowable lower bound
-        if (newSessionWindowSize < 0) {
+        // Check if connection window size is reduced beyond allowable lower bound
+        if (newConnectionWindowSize < 0) {
             issueConnectionError(HttpErrorCode.PROTOCOL_ERROR);
             return;
         }
 
-        // Send a WINDOW_UPDATE frame if less than half the session window size remains
-        if (newSessionWindowSize <= initialReceiveWindowSize / 2) {
-            int windowSizeIncrement = initialReceiveWindowSize - newSessionWindowSize;
-            httpConnection.updateReceiveWindowSize(HTTP_SESSION_STREAM_ID, windowSizeIncrement);
+        // Send a WINDOW_UPDATE frame if less than half the connection window size remains
+        if (newConnectionWindowSize <= initialReceiveWindowSize / 2) {
+            int windowSizeIncrement = initialReceiveWindowSize - newConnectionWindowSize;
+            httpConnection.updateReceiveWindowSize(HTTP_CONNECTION_STREAM_ID, windowSizeIncrement);
             ByteBuf frame = httpFrameEncoder.encodeWindowUpdateFrame(
-                    HTTP_SESSION_STREAM_ID, windowSizeIncrement);
+                    HTTP_CONNECTION_STREAM_ID, windowSizeIncrement);
             context.writeAndFlush(frame);
         }
 
@@ -233,7 +233,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
         // Window size can become negative if we sent a SETTINGS frame that reduces the
         // size of the transfer window after the peer has written data frames.
         // The value is bounded by the length that SETTINGS frame decrease the window.
-        // This difference is stored for the session when writing the SETTINGS frame
+        // This difference is stored for the connection when writing the SETTINGS frame
         // and is cleared once we send a WINDOW_UPDATE frame.
         if (newWindowSize < httpConnection.getReceiveWindowSizeLowerBound(streamId)) {
             issueStreamError(streamId, HttpErrorCode.FLOW_CONTROL_ERROR);
@@ -502,13 +502,13 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
         // TODO(jpinner) handle disabled flow control
 
         // Ignore frames for half-closed streams
-        if (streamId != HTTP_SESSION_STREAM_ID && httpConnection.isLocalSideClosed(streamId)) {
+        if (streamId != HTTP_CONNECTION_STREAM_ID && httpConnection.isLocalSideClosed(streamId)) {
             return;
         }
 
         // Check for numerical overflow
         if (httpConnection.getSendWindowSize(streamId) > Integer.MAX_VALUE - windowSizeIncrement) {
-            if (streamId == HTTP_SESSION_STREAM_ID) {
+            if (streamId == HTTP_CONNECTION_STREAM_ID) {
                 issueConnectionError(HttpErrorCode.PROTOCOL_ERROR);
             } else {
                 issueStreamError(streamId, HttpErrorCode.FLOW_CONTROL_ERROR);
@@ -648,8 +648,8 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
             synchronized (flowControlLock) {
                 int dataLength = httpDataFrame.content().readableBytes();
                 int sendWindowSize = httpConnection.getSendWindowSize(streamId);
-                int sessionSendWindowSize = httpConnection.getSendWindowSize(HTTP_SESSION_STREAM_ID);
-                sendWindowSize = Math.min(sendWindowSize, sessionSendWindowSize);
+                int connectionSendWindowSize = httpConnection.getSendWindowSize(HTTP_CONNECTION_STREAM_ID);
+                sendWindowSize = Math.min(sendWindowSize, connectionSendWindowSize);
 
                 if (sendWindowSize <= 0) {
                     // Stream is stalled -- enqueue Data frame and return
@@ -659,7 +659,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
                 } else if (sendWindowSize < dataLength) {
                     // Stream is not stalled but we cannot send the entire frame
                     httpConnection.updateSendWindowSize(streamId, -1 * sendWindowSize);
-                    httpConnection.updateSendWindowSize(HTTP_SESSION_STREAM_ID, -1 * sendWindowSize);
+                    httpConnection.updateSendWindowSize(HTTP_CONNECTION_STREAM_ID, -1 * sendWindowSize);
 
                     // Create a partial data frame whose length is the current window size
                     ByteBuf data = httpDataFrame.content().readSlice(sendWindowSize);
@@ -672,7 +672,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
                     ChannelPromise writeFuture = ctx.channel().newPromise();
 
                     // The transfer window size is pre-decremented when sending a data frame downstream.
-                    // Close the session on write failures that leaves the transfer window in a corrupt state.
+                    // Close the connection on write failures that leaves the transfer window in a corrupt state.
                     writeFuture.addListener(connectionErrorListener);
 
                     ctx.write(partialDataFrame, writeFuture);
@@ -680,10 +680,10 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
                 } else {
                     // Window size is large enough to send entire data frame
                     httpConnection.updateSendWindowSize(streamId, -1 * dataLength);
-                    httpConnection.updateSendWindowSize(HTTP_SESSION_STREAM_ID, -1 * dataLength);
+                    httpConnection.updateSendWindowSize(HTTP_CONNECTION_STREAM_ID, -1 * dataLength);
 
                     // The transfer window size is pre-decremented when sending a data frame downstream.
-                    // Close the session on write failures that leaves the transfer window in a corrupt state.
+                    // Close the connection on write failures that leaves the transfer window in a corrupt state.
                     promise.addListener(connectionErrorListener);
                 }
             }
@@ -858,9 +858,9 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
 
     // HTTP/2 Connection Error Handling:
     //
-    // When a session error occurs, the endpoint encountering the error must first
+    // When a connection error occurs, the endpoint encountering the error must first
     // send a GOAWAY frame with the stream identifier of the most recently received stream
-    // from the remote endpoint, and the error code for why the session is terminating.
+    // from the remote endpoint, and the error code for why the connection is terminating.
     //
     // After sending the GOAWAY frame, the endpoint must close the TCP connection.
     private void issueConnectionError(HttpErrorCode status) {
@@ -947,15 +947,15 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
         } else {
             httpConnection.closeLocalSide(streamId, isRemoteInitiatedId(streamId));
         }
-        if (closeSessionFutureListener != null && httpConnection.noActiveStreams()) {
-            future.addListener(closeSessionFutureListener);
+        if (closingChannelFutureListener != null && httpConnection.noActiveStreams()) {
+            future.addListener(closingChannelFutureListener);
         }
     }
 
     private void removeStream(int streamId, ChannelFuture future) {
         httpConnection.removeStream(streamId, isRemoteInitiatedId(streamId));
-        if (closeSessionFutureListener != null && httpConnection.noActiveStreams()) {
-            future.addListener(closeSessionFutureListener);
+        if (closingChannelFutureListener != null && httpConnection.noActiveStreams()) {
+            future.addListener(closingChannelFutureListener);
         }
     }
 
@@ -963,9 +963,9 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
             ChannelHandlerContext ctx, int streamId, int windowSizeIncrement) {
         synchronized (flowControlLock) {
             int newWindowSize = httpConnection.updateSendWindowSize(streamId, windowSizeIncrement);
-            if (streamId != HTTP_SESSION_STREAM_ID) {
-                int sessionSendWindowSize = httpConnection.getSendWindowSize(HTTP_SESSION_STREAM_ID);
-                newWindowSize = Math.min(newWindowSize, sessionSendWindowSize);
+            if (streamId != HTTP_CONNECTION_STREAM_ID) {
+                int connectionSendWindowSize = httpConnection.getSendWindowSize(HTTP_CONNECTION_STREAM_ID);
+                newWindowSize = Math.min(newWindowSize, connectionSendWindowSize);
             }
 
             while (newWindowSize > 0) {
@@ -978,7 +978,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
                 HttpDataFrame httpDataFrame = e.httpDataFrame;
                 int dataFrameSize = httpDataFrame.content().readableBytes();
                 final int writeStreamId = httpDataFrame.getStreamId();
-                if (streamId == HTTP_SESSION_STREAM_ID) {
+                if (streamId == HTTP_CONNECTION_STREAM_ID) {
                     newWindowSize = Math.min(newWindowSize, httpConnection.getSendWindowSize(writeStreamId));
                 }
 
@@ -986,12 +986,12 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
                     // Window size is large enough to send entire data frame
                     httpConnection.removePendingWrite(writeStreamId);
                     newWindowSize = httpConnection.updateSendWindowSize(writeStreamId, -1 * dataFrameSize);
-                    int sessionSendWindowSize =
-                            httpConnection.updateSendWindowSize(HTTP_SESSION_STREAM_ID, -1 * dataFrameSize);
-                    newWindowSize = Math.min(newWindowSize, sessionSendWindowSize);
+                    int connectionSendWindowSize =
+                            httpConnection.updateSendWindowSize(HTTP_CONNECTION_STREAM_ID, -1 * dataFrameSize);
+                    newWindowSize = Math.min(newWindowSize, connectionSendWindowSize);
 
                     // The transfer window size is pre-decremented when sending a data frame downstream.
-                    // Close the session on write failures that leaves the transfer window in a corrupt state.
+                    // Close the connection on write failures that leaves the transfer window in a corrupt state.
                     e.promise.addListener(connectionErrorListener);
 
                     // Close the local side of the stream if this is the last frame
@@ -1009,7 +1009,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
                 } else {
                     // We can send a partial frame
                     httpConnection.updateSendWindowSize(writeStreamId, -1 * newWindowSize);
-                    httpConnection.updateSendWindowSize(HTTP_SESSION_STREAM_ID, -1 * newWindowSize);
+                    httpConnection.updateSendWindowSize(HTTP_CONNECTION_STREAM_ID, -1 * newWindowSize);
 
                     // Create a partial data frame whose length is the current window size
                     ByteBuf data = httpDataFrame.content().readSlice(newWindowSize);
@@ -1018,7 +1018,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
                     ChannelPromise writeFuture = ctx.channel().newPromise();
 
                     // The transfer window size is pre-decremented when sending a data frame downstream.
-                    // Close the session on write failures that leaves the transfer window in a corrupt state.
+                    // Close the connection on write failures that leaves the transfer window in a corrupt state.
                     writeFuture.addListener(connectionErrorListener);
 
                     ctx.write(partialDataFrame, writeFuture);
@@ -1034,7 +1034,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
         if (httpConnection.noActiveStreams()) {
             future.addListener(new ClosingChannelFutureListener(ctx, promise));
         } else {
-            closeSessionFutureListener = new ClosingChannelFutureListener(ctx, promise);
+            closingChannelFutureListener = new ClosingChannelFutureListener(ctx, promise);
         }
     }
 

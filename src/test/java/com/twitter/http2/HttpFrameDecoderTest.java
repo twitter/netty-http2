@@ -58,7 +58,7 @@ public class HttpFrameDecoderTest {
         }));
         int length = 0;
         byte flags = 0;
-        int streamId = 0; // session identifier
+        int streamId = 0; // connection identifier
 
         ByteBuf frame = settingsFrame(length, flags, streamId);
         decoder.decode(releaseLater(Unpooled.wrappedBuffer(connectionPreface, frame)));
@@ -74,7 +74,7 @@ public class HttpFrameDecoderTest {
         // Only write SETTINGS frame
         int length = 0;
         byte flags = 0;
-        int streamId = 0; // session identifier
+        int streamId = 0; // connection identifier
 
         ByteBuf frame = settingsFrame(length, flags, streamId);
         decoder.decode(frame);
@@ -595,7 +595,7 @@ public class HttpFrameDecoderTest {
     public void testHttpSettingsFrame() throws Exception {
         int length = 6;
         byte flags = 0;
-        int streamId = 0; // session identifier
+        int streamId = 0; // connection identifier
         int id = RANDOM.nextInt() & 0xFFFF;
         int value = RANDOM.nextInt();
 
@@ -615,7 +615,7 @@ public class HttpFrameDecoderTest {
     public void testHttpSettingsAckFrame() throws Exception {
         int length = 0;
         byte flags = 0x01; // ACK
-        int streamId = 0; // session identifier
+        int streamId = 0; // connection identifier
 
         ByteBuf frame = settingsFrame(length, flags, streamId);
         decoder.decode(frame);
@@ -630,7 +630,7 @@ public class HttpFrameDecoderTest {
     public void testHttpSettingsFrameWithMultiples() throws Exception {
         int length = 12;
         byte flags = 0;
-        int streamId = 0; // session identifier
+        int streamId = 0; // connection identifier
         int id = RANDOM.nextInt() & 0xFFFF;
         int value1 = RANDOM.nextInt();
         int value2 = RANDOM.nextInt();
@@ -654,7 +654,7 @@ public class HttpFrameDecoderTest {
     public void testHttpSettingsFrameReservedBits() throws Exception {
         int length = 6;
         byte flags = (byte) 0xFE; // should ignore any unknown flags
-        int streamId = 0; // session identifier
+        int streamId = 0; // connection identifier
         int id = RANDOM.nextInt() & 0xFFFF;
         int value = RANDOM.nextInt();
 
@@ -675,7 +675,7 @@ public class HttpFrameDecoderTest {
     public void testInvalidHttpSettingsFrame() throws Exception {
         int length = 8; // invalid length
         byte flags = 0;
-        int streamId = 0; // session identifier
+        int streamId = 0; // connection identifier
         int id = RANDOM.nextInt() & 0xFFFF;
         int value = RANDOM.nextInt();
 
@@ -692,7 +692,7 @@ public class HttpFrameDecoderTest {
     public void testInvalidHttpSettingsAckFrame() throws Exception {
         int length = 6; // invalid length
         byte flags = 0x01; // ACK
-        int streamId = 0; // session identifier
+        int streamId = 0; // connection identifier
         int id = RANDOM.nextInt() & 0xFFFF;
         int value = RANDOM.nextInt();
 
@@ -925,7 +925,7 @@ public class HttpFrameDecoderTest {
     public void testHttpPingFrame() throws Exception {
         int length = 8;
         byte flags = 0;
-        int streamId = 0; // session identifier
+        int streamId = 0; // connection identifier
         long data = RANDOM.nextLong();
 
         ByteBuf frame = pingFrame(length, flags, streamId);
@@ -940,7 +940,7 @@ public class HttpFrameDecoderTest {
     public void testHttpPongFrame() throws Exception {
         int length = 8;
         byte flags = 0x01; // PONG
-        int streamId = 0; // session identifier
+        int streamId = 0; // connection identifier
         long data = RANDOM.nextLong();
 
         ByteBuf frame = pingFrame(length, flags, streamId);
@@ -955,7 +955,7 @@ public class HttpFrameDecoderTest {
     public void testHttpPingFrameReservedBits() throws Exception {
         int length = 8;
         byte flags = (byte) 0xFE; // should ignore any unknown flags
-        int streamId = 0; // session identifier
+        int streamId = 0; // connection identifier
         long data = RANDOM.nextLong();
 
         ByteBuf frame = pingFrame(length, flags, streamId);
@@ -970,7 +970,7 @@ public class HttpFrameDecoderTest {
     public void testInvalidHttpPingFrame() throws Exception {
         int length = 12; // invalid length
         byte flags = 0;
-        int streamId = 0; // session identifier
+        int streamId = 0; // connection identifier
         long data = RANDOM.nextLong();
 
         ByteBuf frame = pingFrame(length, flags, streamId);
@@ -1000,7 +1000,7 @@ public class HttpFrameDecoderTest {
     public void testHttpGoAwayFrame() throws Exception {
         int length = 8;
         byte flags = 0;
-        int streamId = 0; // session identifier
+        int streamId = 0; // connection identifier
         int lastStreamId = RANDOM.nextInt() & 0x7FFFFFFF | 0x01;
         int errorCode = RANDOM.nextInt();
 
@@ -1017,7 +1017,7 @@ public class HttpFrameDecoderTest {
     public void testHttpGoAwayFrameReservedBits() throws Exception {
         int length = 8;
         byte flags = (byte) 0xFF; // should ignore any flags
-        int streamId = 0; // session identifier
+        int streamId = 0; // connection identifier
         int lastStreamId = RANDOM.nextInt() & 0x7FFFFFFF | 0x01;
         int errorCode = RANDOM.nextInt();
 
@@ -1036,7 +1036,7 @@ public class HttpFrameDecoderTest {
         int debugDataLength = 1024;
         int length = 8 + debugDataLength;
         byte flags = 0;
-        int streamId = 0; // session identifier
+        int streamId = 0; // connection identifier
         int lastStreamId = RANDOM.nextInt() & 0x7FFFFFFF | 0x01;
         int errorCode = RANDOM.nextInt();
 
@@ -1054,7 +1054,7 @@ public class HttpFrameDecoderTest {
     public void testInvalidHttpGoAwayFrame() throws Exception {
         int length = 4; // invalid length
         byte flags = 0;
-        int streamId = 0; // session identifier
+        int streamId = 0; // connection identifier
         int lastStreamId = RANDOM.nextInt() & 0x7FFFFFFF | 0x01;
 
         ByteBuf frame = goAwayFrame(length, flags, streamId);
@@ -1086,7 +1086,7 @@ public class HttpFrameDecoderTest {
     public void testHttpWindowUpdateFrame() throws Exception {
         int length = 4;
         byte flags = 0;
-        int streamId = RANDOM.nextInt() & 0x7FFFFFFF; // session identifier allowed
+        int streamId = RANDOM.nextInt() & 0x7FFFFFFF; // connection identifier allowed
         int windowSizeIncrement = RANDOM.nextInt() & 0x7FFFFFFF | 0x01;
 
         ByteBuf frame = windowUpdateFrame(length, flags, streamId);
@@ -1101,7 +1101,7 @@ public class HttpFrameDecoderTest {
     public void testHttpWindowUpdateFrameReservedBits() throws Exception {
         int length = 4;
         byte flags = (byte) 0xFF; // should ignore any unknown flags
-        int streamId = RANDOM.nextInt() & 0x7FFFFFFF; // session identifier allowed
+        int streamId = RANDOM.nextInt() & 0x7FFFFFFF; // connection identifier allowed
         int windowSizeIncrement = RANDOM.nextInt() & 0x7FFFFFFF | 0x01;
 
         ByteBuf frame = windowUpdateFrame(length, flags, streamId);
@@ -1117,7 +1117,7 @@ public class HttpFrameDecoderTest {
     public void testInvalidHttpWindowUpdateFrame() throws Exception {
         int length = 8; // invalid length
         byte flags = 0;
-        int streamId = RANDOM.nextInt() & 0x7FFFFFFF; // session identifier allowed
+        int streamId = RANDOM.nextInt() & 0x7FFFFFFF; // connection identifier allowed
         int windowSizeIncrement = RANDOM.nextInt() & 0x7FFFFFFF | 0x01;
 
         ByteBuf frame = windowUpdateFrame(length, flags, streamId);
@@ -1132,7 +1132,7 @@ public class HttpFrameDecoderTest {
     public void testIllegalHttpWindowUpdateFrame() throws Exception {
         int length = 4;
         byte flags = 0;
-        int streamId = RANDOM.nextInt() & 0x7FFFFFFF; // session identifier allowed
+        int streamId = RANDOM.nextInt() & 0x7FFFFFFF; // connection identifier allowed
         int windowSizeIncrement = 0; // illegal delta window size
 
         ByteBuf frame = windowUpdateFrame(length, flags, streamId);
@@ -1161,7 +1161,7 @@ public class HttpFrameDecoderTest {
         int length = 0;
         int type = 0xFF; // unknown frame
         byte flags = 0;
-        int streamId = 0; // session identifier
+        int streamId = 0; // connection identifier
 
         ByteBuf frame = frame(length, type, flags, streamId);
         decoder.decode(frame);
