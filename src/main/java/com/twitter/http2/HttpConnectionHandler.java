@@ -57,8 +57,6 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
     private int remoteConcurrentStreams = DEFAULT_MAX_CONCURRENT_STREAMS;
     private int localConcurrentStreams = DEFAULT_MAX_CONCURRENT_STREAMS;
 
-    private final Object flowControlLock = new Object();
-
     private boolean sentGoAwayFrame;
     private boolean receivedGoAwayFrame;
 
@@ -633,59 +631,57 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
                 return;
             }
 
-      /*
-      * SPDY Data frame flow control processing requirements:
-      *
-      * Sender must not send a data frame with data length greater
-      * than the transfer window size.
-      *
-      * After sending each data frame, the sender decrements its
-      * transfer window size by the amount of data transmitted.
-      *
-      * When the window size becomes less than or equal to 0, the
-      * sender must pause transmitting data frames.
-      */
-            synchronized (flowControlLock) {
-                int dataLength = httpDataFrame.content().readableBytes();
-                int sendWindowSize = httpConnection.getSendWindowSize(streamId);
-                int connectionSendWindowSize = httpConnection.getSendWindowSize(HTTP_CONNECTION_STREAM_ID);
-                sendWindowSize = Math.min(sendWindowSize, connectionSendWindowSize);
+            // HTTP/2 DATA frame flow control processing requirements:
+            //
+            // Sender must not send a data frame with data length greater
+            // than the transfer window size.
+            //
+            // After sending each data frame, the sender decrements its
+            // transfer window size by the amount of data transmitted.
+            //
+            // When the window size becomes less than or equal to 0, the
+            // sender must pause transmitting data frames.
 
-                if (sendWindowSize <= 0) {
-                    // Stream is stalled -- enqueue Data frame and return
-                    httpConnection.putPendingWrite(
-                            streamId, new HttpConnection.PendingWrite(httpDataFrame, promise));
-                    return;
-                } else if (sendWindowSize < dataLength) {
-                    // Stream is not stalled but we cannot send the entire frame
-                    httpConnection.updateSendWindowSize(streamId, -1 * sendWindowSize);
-                    httpConnection.updateSendWindowSize(HTTP_CONNECTION_STREAM_ID, -1 * sendWindowSize);
+            int dataLength = httpDataFrame.content().readableBytes();
+            int sendWindowSize = httpConnection.getSendWindowSize(streamId);
+            int connectionSendWindowSize = httpConnection.getSendWindowSize(
+                    HTTP_CONNECTION_STREAM_ID);
+            sendWindowSize = Math.min(sendWindowSize, connectionSendWindowSize);
 
-                    // Create a partial data frame whose length is the current window size
-                    ByteBuf data = httpDataFrame.content().readSlice(sendWindowSize);
-                    ByteBuf partialDataFrame = httpFrameEncoder.encodeDataFrame(streamId, false, data);
+            if (sendWindowSize <= 0) {
+                // Stream is stalled -- enqueue Data frame and return
+                httpConnection.putPendingWrite(
+                        streamId, new HttpConnection.PendingWrite(httpDataFrame, promise));
+                return;
+            } else if (sendWindowSize < dataLength) {
+                // Stream is not stalled but we cannot send the entire frame
+                httpConnection.updateSendWindowSize(streamId, -1 * sendWindowSize);
+                httpConnection.updateSendWindowSize(HTTP_CONNECTION_STREAM_ID, -1 * sendWindowSize);
 
-                    // Enqueue the remaining data (will be the first frame queued)
-                    httpConnection.putPendingWrite(
-                            streamId, new HttpConnection.PendingWrite(httpDataFrame, promise));
+                // Create a partial data frame whose length is the current window size
+                ByteBuf data = httpDataFrame.content().readSlice(sendWindowSize);
+                ByteBuf partialDataFrame = httpFrameEncoder.encodeDataFrame(streamId, false, data);
 
-                    ChannelPromise writeFuture = ctx.channel().newPromise();
+                // Enqueue the remaining data (will be the first frame queued)
+                httpConnection.putPendingWrite(
+                        streamId, new HttpConnection.PendingWrite(httpDataFrame, promise));
 
-                    // The transfer window size is pre-decremented when sending a data frame downstream.
-                    // Close the connection on write failures that leaves the transfer window in a corrupt state.
-                    writeFuture.addListener(connectionErrorListener);
+                ChannelPromise writeFuture = ctx.channel().newPromise();
 
-                    ctx.write(partialDataFrame, writeFuture);
-                    return;
-                } else {
-                    // Window size is large enough to send entire data frame
-                    httpConnection.updateSendWindowSize(streamId, -1 * dataLength);
-                    httpConnection.updateSendWindowSize(HTTP_CONNECTION_STREAM_ID, -1 * dataLength);
+                // The transfer window size is pre-decremented when sending a data frame downstream.
+                // Close the connection on write failures that leaves the transfer window in a corrupt state.
+                writeFuture.addListener(connectionErrorListener);
 
-                    // The transfer window size is pre-decremented when sending a data frame downstream.
-                    // Close the connection on write failures that leaves the transfer window in a corrupt state.
-                    promise.addListener(connectionErrorListener);
-                }
+                ctx.write(partialDataFrame, writeFuture);
+                return;
+            } else {
+                // Window size is large enough to send entire data frame
+                httpConnection.updateSendWindowSize(streamId, -1 * dataLength);
+                httpConnection.updateSendWindowSize(HTTP_CONNECTION_STREAM_ID, -1 * dataLength);
+
+                // The transfer window size is pre-decremented when sending a data frame downstream.
+                // Close the connection on write failures that leaves the transfer window in a corrupt state.
+                promise.addListener(connectionErrorListener);
             }
 
             // Close the local side of the stream if this is the last frame
@@ -868,17 +864,15 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
         future.addListener(ChannelFutureListener.CLOSE);
     }
 
-    /*
-    * SPDY Stream Error Handling:
-    *
-    * Upon a stream error, the endpoint must send a RST_STREAM frame which contains
-    * the Stream-ID for the stream where the error occurred and the error status which
-    * caused the error.
-    *
-    * After sending the RST_STREAM, the stream is closed to the sending endpoint.
-    *
-    * Note: this is only called by the worker thread
-    */
+    // Http/2 Stream Error Handling:
+    //
+    // Upon a stream error, the endpoint must send a RST_STREAM frame which contains
+    // the Stream-ID for the stream where the error occurred and the error status which
+    // caused the error.
+    //
+    // After sending the RST_STREAM, the stream is closed to the sending endpoint.
+    //
+    // Note: this is only called by the worker thread
     private void issueStreamError(int streamId, HttpErrorCode errorCode) {
 
         boolean fireMessageReceived = !httpConnection.isRemoteSideClosed(streamId);
@@ -961,70 +955,63 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
 
     private void updateSendWindowSize(
             ChannelHandlerContext ctx, int streamId, int windowSizeIncrement) {
-        synchronized (flowControlLock) {
-            int newWindowSize = httpConnection.updateSendWindowSize(streamId, windowSizeIncrement);
-            if (streamId != HTTP_CONNECTION_STREAM_ID) {
-                int connectionSendWindowSize = httpConnection.getSendWindowSize(HTTP_CONNECTION_STREAM_ID);
-                newWindowSize = Math.min(newWindowSize, connectionSendWindowSize);
+        httpConnection.updateSendWindowSize(streamId, windowSizeIncrement);
+
+        while (true) {
+            // Check if we have unblocked a stalled stream
+            HttpConnection.PendingWrite e = httpConnection.getPendingWrite(streamId);
+            if (e == null) {
+                break;
             }
 
-            while (newWindowSize > 0) {
-                // Check if we have unblocked a stalled stream
-                HttpConnection.PendingWrite e = httpConnection.getPendingWrite(streamId);
-                if (e == null) {
-                    break;
+            HttpDataFrame httpDataFrame = e.httpDataFrame;
+            int dataFrameSize = httpDataFrame.content().readableBytes();
+            int writeStreamId = httpDataFrame.getStreamId();
+            int sendWindowSize = httpConnection.getSendWindowSize(writeStreamId);
+            int connectionSendWindowSize = httpConnection.getSendWindowSize(
+                    HTTP_CONNECTION_STREAM_ID);
+            sendWindowSize = Math.min(sendWindowSize, connectionSendWindowSize);
+
+            if (sendWindowSize <= 0) {
+                return;
+            } else if (sendWindowSize < dataFrameSize) {
+                // We can send a partial frame
+                httpConnection.updateSendWindowSize(writeStreamId, -1 * sendWindowSize);
+                httpConnection.updateSendWindowSize(HTTP_CONNECTION_STREAM_ID, -1 * sendWindowSize);
+
+                // Create a partial data frame whose length is the current window size
+                ByteBuf data = httpDataFrame.content().readSlice(sendWindowSize);
+                ByteBuf partialDataFrame = httpFrameEncoder.encodeDataFrame(writeStreamId, false, data);
+
+                ChannelPromise writeFuture = ctx.channel().newPromise();
+
+                // The transfer window size is pre-decremented when sending a data frame downstream.
+                // Close the connection on write failures that leaves the transfer window in a corrupt state.
+                writeFuture.addListener(connectionErrorListener);
+
+                ctx.writeAndFlush(partialDataFrame, writeFuture);
+            } else {
+                // Window size is large enough to send entire data frame
+                httpConnection.removePendingWrite(writeStreamId);
+                httpConnection.updateSendWindowSize(writeStreamId, -1 * dataFrameSize);
+                httpConnection.updateSendWindowSize(HTTP_CONNECTION_STREAM_ID, -1 * dataFrameSize);
+
+                // The transfer window size is pre-decremented when sending a data frame downstream.
+                // Close the connection on write failures that leaves the transfer window in a corrupt state.
+                e.promise.addListener(connectionErrorListener);
+
+                // Close the local side of the stream if this is the last frame
+                if (httpDataFrame.isLast()) {
+                    halfCloseStream(writeStreamId, false, e.promise);
                 }
 
-                HttpDataFrame httpDataFrame = e.httpDataFrame;
-                int dataFrameSize = httpDataFrame.content().readableBytes();
-                final int writeStreamId = httpDataFrame.getStreamId();
-                if (streamId == HTTP_CONNECTION_STREAM_ID) {
-                    newWindowSize = Math.min(newWindowSize, httpConnection.getSendWindowSize(writeStreamId));
-                }
+                ByteBuf frame = httpFrameEncoder.encodeDataFrame(
+                        writeStreamId,
+                        httpDataFrame.isLast(),
+                        httpDataFrame.content()
+                );
 
-                if (newWindowSize >= dataFrameSize) {
-                    // Window size is large enough to send entire data frame
-                    httpConnection.removePendingWrite(writeStreamId);
-                    newWindowSize = httpConnection.updateSendWindowSize(writeStreamId, -1 * dataFrameSize);
-                    int connectionSendWindowSize =
-                            httpConnection.updateSendWindowSize(HTTP_CONNECTION_STREAM_ID, -1 * dataFrameSize);
-                    newWindowSize = Math.min(newWindowSize, connectionSendWindowSize);
-
-                    // The transfer window size is pre-decremented when sending a data frame downstream.
-                    // Close the connection on write failures that leaves the transfer window in a corrupt state.
-                    e.promise.addListener(connectionErrorListener);
-
-                    // Close the local side of the stream if this is the last frame
-                    if (httpDataFrame.isLast()) {
-                        halfCloseStream(writeStreamId, false, e.promise);
-                    }
-
-                    ByteBuf frame = httpFrameEncoder.encodeDataFrame(
-                            writeStreamId,
-                            httpDataFrame.isLast(),
-                            httpDataFrame.content()
-                    );
-
-                    ctx.write(frame, e.promise);
-                } else {
-                    // We can send a partial frame
-                    httpConnection.updateSendWindowSize(writeStreamId, -1 * newWindowSize);
-                    httpConnection.updateSendWindowSize(HTTP_CONNECTION_STREAM_ID, -1 * newWindowSize);
-
-                    // Create a partial data frame whose length is the current window size
-                    ByteBuf data = httpDataFrame.content().readSlice(newWindowSize);
-                    ByteBuf partialDataFrame = httpFrameEncoder.encodeDataFrame(writeStreamId, false, data);
-
-                    ChannelPromise writeFuture = ctx.channel().newPromise();
-
-                    // The transfer window size is pre-decremented when sending a data frame downstream.
-                    // Close the connection on write failures that leaves the transfer window in a corrupt state.
-                    writeFuture.addListener(connectionErrorListener);
-
-                    ctx.write(partialDataFrame, writeFuture);
-
-                    newWindowSize = 0;
-                }
+                ctx.writeAndFlush(frame, e.promise);
             }
         }
     }

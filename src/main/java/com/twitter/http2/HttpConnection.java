@@ -161,10 +161,13 @@ final class HttpConnection {
 
         Node stream = streams.get(streamId);
         StreamState state = stream == null ? null : stream.state;
+        if (state == null) {
+            return -1;
+        }
         if (deltaWindowSize > 0) {
             state.setReceiveWindowSizeLowerBound(0);
         }
-        return state != null ? state.updateReceiveWindowSize(deltaWindowSize) : -1;
+        return state.updateReceiveWindowSize(deltaWindowSize);
     }
 
     int getReceiveWindowSizeLowerBound(int streamId) {
