@@ -70,6 +70,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
     private ChannelFutureListener closingChannelFutureListener;
 
     private final boolean server;
+    private final boolean handleStreamWindowUpdates;
 
     private final HttpFrameDecoder httpFrameDecoder;
     private final HttpFrameEncoder httpFrameEncoder;
@@ -100,14 +101,30 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
      *               handle the client endpoint of the connection.
      */
     public HttpConnectionHandler(boolean server) {
-        this(server, 8192, 16384);
+        this(server, true);
+    }
+
+    /**
+     * Creates a new connection handler with the specified options.
+     */
+    public HttpConnectionHandler(boolean server, boolean handleStreamWindowUpdates) {
+        this(server, handleStreamWindowUpdates, 8192, 16384);
     }
 
     /**
      * Creates a new connection handler with the specified options.
      */
     public HttpConnectionHandler(boolean server, int maxChunkSize, int maxHeaderSize) {
+        this(server, true, maxChunkSize, maxHeaderSize);
+    }
+
+    /**
+     * Creates a new connection handler with the specified options.
+     */
+    public HttpConnectionHandler(
+            boolean server, boolean handleStreamWindowUpdates, int maxChunkSize, int maxHeaderSize) {
         this.server = server;
+        this.handleStreamWindowUpdates = handleStreamWindowUpdates;
         httpFrameDecoder = new HttpFrameDecoder(server, this, maxChunkSize);
         httpFrameEncoder = new HttpFrameEncoder();
         httpHeaderBlockDecoder = new HttpHeaderBlockDecoder(maxHeaderSize, DEFAULT_HEADER_TABLE_SIZE);
@@ -174,7 +191,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
 
         // Send a WINDOW_UPDATE frame if less than half the stream window size remains
         // Recipient should not send a WINDOW_UPDATE frame as it consumes the last data frame.
-        if (newWindowSize <= initialReceiveWindowSize / 2 && !endStream) {
+        if (handleStreamWindowUpdates && newWindowSize <= initialReceiveWindowSize / 2 && !endStream) {
             int windowSizeIncrement = initialReceiveWindowSize - newWindowSize;
             httpConnection.updateReceiveWindowSize(streamId, windowSizeIncrement);
             ByteBuf frame = httpFrameEncoder.encodeWindowUpdateFrame(streamId, windowSizeIncrement);
@@ -255,7 +272,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
 
         // Send a WINDOW_UPDATE frame if less than half the stream window size remains
         // Recipient should not send a WINDOW_UPDATE frame as it consumes the last data frame.
-        if (newWindowSize <= initialReceiveWindowSize / 2 && !endStream) {
+        if (handleStreamWindowUpdates && newWindowSize <= initialReceiveWindowSize / 2 && !endStream) {
             int windowSizeIncrement = initialReceiveWindowSize - newWindowSize;
             httpConnection.updateReceiveWindowSize(streamId, windowSizeIncrement);
             ByteBuf frame = httpFrameEncoder.encodeWindowUpdateFrame(streamId, windowSizeIncrement);
@@ -839,8 +856,18 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
 
         } else if (msg instanceof HttpWindowUpdateFrame) {
 
-            // Why is this being sent? Intercept it and fail the write.
-            promise.setFailure(PROTOCOL_EXCEPTION);
+            HttpWindowUpdateFrame httpWindowUpdateFrame = (HttpWindowUpdateFrame) msg;
+            int streamId = httpWindowUpdateFrame.getStreamId();
+
+            if (handleStreamWindowUpdates || streamId == HTTP_CONNECTION_STREAM_ID) {
+                // Why is this being sent? Intercept it and fail the write.
+                promise.setFailure(PROTOCOL_EXCEPTION);
+            } else {
+                int windowSizeIncrement = httpWindowUpdateFrame.getWindowSizeIncrement();
+                httpConnection.updateReceiveWindowSize(streamId, windowSizeIncrement);
+                ByteBuf frame = httpFrameEncoder.encodeWindowUpdateFrame(streamId, windowSizeIncrement);
+                ctx.write(frame, promise);
+            }
 
         } else {
 
