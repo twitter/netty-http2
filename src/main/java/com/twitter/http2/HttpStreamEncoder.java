@@ -25,6 +25,8 @@ import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpMessage;
+import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCountUtil;
@@ -43,43 +45,34 @@ public class HttpStreamEncoder extends ChannelOutboundHandlerAdapter {
     @Override
     public void write(final ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
             throws Exception {
-        if (msg instanceof StreamedHttpResponse) {
-            StreamedHttpResponse response = (StreamedHttpResponse) msg;
-            final Pipe<HttpContent> pipe = response.getContent();
-            if (!pipe.isClosed()) {
-                final int streamId = HttpHeaders.getIntHeader(response, "X-SPDY-Stream-ID");
+        if (msg instanceof HttpRequest) {
 
-                final ChannelPromise completionFuture = promise;
-                ChannelPromise writeFuture = ctx.channel().newPromise();
-                writeFuture.addListener(new ChannelFutureListener() {
-                    @Override
-                    public void operationComplete(ChannelFuture future) throws Exception {
-                        // Channel's thread
-                        // First frame has been written
+            HttpRequest httpRequest = (HttpRequest) msg;
+            HttpHeadersFrame httpHeadersFrame = createHttpHeadersFrame(httpRequest);
+            currentStreamId = httpHeadersFrame.getStreamId();
 
-                        if (future.isSuccess()) {
-                            pipe.receive().addListener(
-                                    new ChunkListener(ctx, pipe, streamId, completionFuture));
-                        } else if (future.isCancelled()) {
-                            pipe.close();
-                            completionFuture.cancel(true);
-                        } else {
-                            pipe.close();
-                            completionFuture.setFailure(future.cause());
-                        }
-                    }
-                });
-
+            ChannelPromise writeFuture = getMessageFuture(ctx, promise, currentStreamId, httpRequest);
+            if (promise == writeFuture) {
+                httpHeadersFrame.setLast(true);
+            } else {
                 promise = writeFuture;
             }
-        }
 
-        if (msg instanceof HttpResponse) {
+            ctx.write(httpHeadersFrame, promise);
+
+        } else if (msg instanceof HttpResponse) {
 
             HttpResponse httpResponse = (HttpResponse) msg;
             HttpHeadersFrame httpHeadersFrame = createHttpHeadersFrame(httpResponse);
-            httpHeadersFrame.setLast(true);
             currentStreamId = httpHeadersFrame.getStreamId();
+
+            ChannelPromise writeFuture = getMessageFuture(ctx, promise, currentStreamId, httpResponse);
+            if (promise == writeFuture) {
+                httpHeadersFrame.setLast(true);
+            } else {
+                promise = writeFuture;
+            }
+
             ctx.write(httpHeadersFrame, promise);
 
         } else if (msg instanceof HttpContent) {
@@ -93,24 +86,61 @@ public class HttpStreamEncoder extends ChannelOutboundHandlerAdapter {
         }
     }
 
+    private ChannelPromise getMessageFuture(
+            final ChannelHandlerContext ctx,
+            final ChannelPromise promise,
+            final int streamId,
+            HttpMessage message
+    ) {
+        if (message instanceof StreamedHttpMessage
+                && !((StreamedHttpMessage) message).getContent().isClosed()) {
+            final Pipe<HttpContent> pipe = ((StreamedHttpMessage) message).getContent();
+
+            ChannelPromise writeFuture = ctx.channel().newPromise();
+            writeFuture.addListener(new ChannelFutureListener() {
+                @Override
+                public void operationComplete(ChannelFuture future) throws Exception {
+                    // Channel's thread
+                    // First frame has been written
+
+                    if (future.isSuccess()) {
+                        pipe.receive().addListener(
+                                new ChunkListener(ctx, streamId, pipe, promise));
+                    } else if (future.isCancelled()) {
+                        pipe.close();
+                        promise.cancel(true);
+                    } else {
+                        pipe.close();
+                        promise.setFailure(future.cause());
+                    }
+                }
+            });
+
+            return writeFuture;
+        } else {
+            return promise;
+        }
+    }
+
+
     /**
      * Listens to chunks being ready on a pipe.
      */
     private class ChunkListener implements FutureListener<HttpContent> {
         private final ChannelHandlerContext ctx;
-        private final Pipe<HttpContent> pipe;
         private final int streamId;
+        private final Pipe<HttpContent> pipe;
         private final ChannelPromise completionFuture;
 
         ChunkListener(
                 ChannelHandlerContext ctx,
-                Pipe<HttpContent> pipe,
                 int streamId,
+                Pipe<HttpContent> pipe,
                 ChannelPromise completionFuture
         ) {
             this.ctx = ctx;
-            this.pipe = pipe;
             this.streamId = streamId;
+            this.pipe = pipe;
             this.completionFuture = completionFuture;
         }
 
@@ -170,12 +200,21 @@ public class HttpStreamEncoder extends ChannelOutboundHandlerAdapter {
     protected void writeChunk(
             ChannelHandlerContext ctx, ChannelPromise future, int streamId, HttpContent content) {
 
+        HttpFrame[] httpFrames = createHttpDataFrames(streamId, content.content());
+
         if (content instanceof LastHttpContent) {
             LastHttpContent trailer = (LastHttpContent) content;
-            if (trailer.trailingHeaders().isEmpty()) {
-                HttpDataFrame httpDataFrame = new DefaultHttpDataFrame(streamId);
-                httpDataFrame.setLast(true);
-                ctx.writeAndFlush(httpDataFrame, future);
+            HttpHeaders trailers = trailer.trailingHeaders();
+            if (trailers.isEmpty()) {
+                if (httpFrames.length == 0) {
+                    HttpDataFrame httpDataFrame = new DefaultHttpDataFrame(streamId);
+                    httpDataFrame.setLast(true);
+                    httpFrames = new HttpFrame[1];
+                    httpFrames[0] = httpDataFrame;
+                } else {
+                    HttpDataFrame httpDataFrame = (HttpDataFrame) httpFrames[httpFrames.length - 1];
+                    httpDataFrame.setLast(true);
+                }
             } else {
                 // Create HTTP HEADERS frame out of trailers
                 HttpHeadersFrame httpHeadersFrame = new DefaultHttpHeadersFrame(streamId);
@@ -183,26 +222,35 @@ public class HttpStreamEncoder extends ChannelOutboundHandlerAdapter {
                 for (Map.Entry<String, String> entry : trailer.trailingHeaders()) {
                     httpHeadersFrame.headers().add(entry.getKey(), entry.getValue());
                 }
-                ctx.writeAndFlush(httpHeadersFrame, future);
+                if (httpFrames.length == 0) {
+                    httpFrames = new HttpFrame[1];
+                    httpFrames[0] = httpHeadersFrame;
+                } else {
+                    HttpFrame[] copy = new HttpFrame[httpFrames.length + 1];
+                    for (int i = 0; i < httpFrames.length; i++) {
+                        copy[i] = httpFrames[i];
+                    }
+                    copy[httpFrames.length] = httpHeadersFrame;
+                    httpFrames = copy;
+                }
             }
-        } else {
-            HttpDataFrame[] httpDataFrames = createHttpDataFrames(streamId, content.content());
-            ChannelPromise dataFuture = getDataFuture(ctx, future, httpDataFrames);
-
-            // Trigger a write
-            dataFuture.setSuccess();
         }
+
+        ChannelPromise frameFuture = getFrameFuture(ctx, future, httpFrames);
+
+        // Trigger a write
+        frameFuture.setSuccess();
     }
 
-    private static ChannelPromise getDataFuture(
-            ChannelHandlerContext ctx, ChannelPromise future, HttpDataFrame[] httpDataFrames) {
-        ChannelPromise dataFuture = future;
-        for (int i = httpDataFrames.length; --i >= 0; ) {
+    private static ChannelPromise getFrameFuture(
+            ChannelHandlerContext ctx, ChannelPromise future, HttpFrame[] httpFrames) {
+        ChannelPromise frameFuture = future;
+        for (int i = httpFrames.length; --i >= 0; ) {
             future = ctx.channel().newPromise();
-            future.addListener(new HttpFrameWriter(ctx, dataFuture, httpDataFrames[i]));
-            dataFuture = future;
+            future.addListener(new HttpFrameWriter(ctx, frameFuture, httpFrames[i]));
+            frameFuture = future;
         }
-        return dataFuture;
+        return frameFuture;
     }
 
     private static class HttpFrameWriter implements ChannelFutureListener {
@@ -228,6 +276,39 @@ public class HttpStreamEncoder extends ChannelOutboundHandlerAdapter {
                 promise.setFailure(future.cause());
             }
         }
+    }
+
+    private HttpHeadersFrame createHttpHeadersFrame(HttpRequest httpRequest)
+            throws Exception {
+        // Get the Stream-ID from the headers
+        int streamId = HttpHeaders.getIntHeader(httpRequest, "X-SPDY-Stream-ID");
+        httpRequest.headers().remove("X-SPDY-Stream-ID");
+
+        // The Connection, Keep-Alive, Proxy-Connection, and Transfer-Encoding
+        // headers are not valid and MUST not be sent.
+        httpRequest.headers().remove(HttpHeaders.Names.CONNECTION);
+        httpRequest.headers().remove("Keep-Alive");
+        httpRequest.headers().remove("Proxy-Connection");
+        httpRequest.headers().remove(HttpHeaders.Names.TRANSFER_ENCODING);
+
+        HttpHeadersFrame httpHeadersFrame = new DefaultHttpHeadersFrame(streamId);
+
+        // Unfold the first line of the request into name/value pairs
+        httpHeadersFrame.headers().add(":method", httpRequest.getMethod().name());
+        httpHeadersFrame.headers().set(":scheme", "https");
+        httpHeadersFrame.headers().add(":path", httpRequest.getUri());
+
+        // Replace the HTTP host header with the SPDY host header
+        String host = httpRequest.headers().get(HttpHeaders.Names.HOST);
+        httpRequest.headers().remove(HttpHeaders.Names.HOST);
+        httpHeadersFrame.headers().add(":authority", host);
+
+        // Transfer the remaining HTTP headers
+        for (Map.Entry<String, String> entry : httpRequest.headers()) {
+            httpHeadersFrame.headers().add(entry.getKey(), entry.getValue());
+        }
+
+        return httpHeadersFrame;
     }
 
     private HttpHeadersFrame createHttpHeadersFrame(HttpResponse httpResponse)
