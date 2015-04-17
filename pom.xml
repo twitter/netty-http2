@@ -3,7 +3,7 @@
 
     <groupId>com.twitter</groupId>
     <artifactId>netty-http2</artifactId>
-    <version>0.17.3</version>
+    <version>0.17.4-SNAPSHOT</version>
 
     <name>HTTP/2</name>
     <url>http://github.com/twitter/netty-http2</url>
