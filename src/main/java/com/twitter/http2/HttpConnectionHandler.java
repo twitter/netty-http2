@@ -691,7 +691,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
                 httpConnection.updateSendWindowSize(HTTP_CONNECTION_STREAM_ID, -1 * sendWindowSize);
 
                 // Create a partial data frame whose length is the current window size
-                ByteBuf data = httpDataFrame.content().readSlice(sendWindowSize);
+                ByteBuf data = httpDataFrame.content().readSlice(sendWindowSize).retain();
                 ByteBuf partialDataFrame = httpFrameEncoder.encodeDataFrame(streamId, false, data);
 
                 // Enqueue the remaining data (will be the first frame queued)
@@ -1022,7 +1022,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
                 httpConnection.updateSendWindowSize(HTTP_CONNECTION_STREAM_ID, -1 * sendWindowSize);
 
                 // Create a partial data frame whose length is the current window size
-                ByteBuf data = httpDataFrame.content().readSlice(sendWindowSize);
+                ByteBuf data = httpDataFrame.content().readSlice(sendWindowSize).retain();
                 ByteBuf partialDataFrame = httpFrameEncoder.encodeDataFrame(writeStreamId, false, data);
 
                 ChannelPromise writeFuture = ctx.channel().newPromise();
