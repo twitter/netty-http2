@@ -837,19 +837,16 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
                 return;
             }
 
-            // TODO(jpinner) handle push promise frames
-            promise.setFailure(PROTOCOL_EXCEPTION);
-
-//      synchronized (httpHeaderBlockEncoder) {
-//        HttpPushPromiseFrame httpPushPromiseFrame = (HttpPushPromiseFrame) msg;
-//        ChannelBuffer frame = httpFrameEncoder.encodePushPromiseFrame(
-//            httpPushPromiseFrame.getStreamId(),
-//            httpPushPromiseFrame.getPromisedStreamId(),
-//            httpHeaderBlockEncoder.encode(ctx, httpPushPromiseFrame)
-//        );
-//        // Writes of compressed data must occur in order
-//        Channels.write(ctx, e.getFuture(), frame, e.getRemoteAddress());
-//      }
+            synchronized (httpHeaderBlockEncoder) {
+              HttpPushPromiseFrame httpPushPromiseFrame = (HttpPushPromiseFrame) msg;
+              ByteBuf frame = httpFrameEncoder.encodePushPromiseFrame(
+                  httpPushPromiseFrame.getStreamId(),
+                  httpPushPromiseFrame.getPromisedStreamId(),
+                  httpHeaderBlockEncoder.encode(ctx, httpPushPromiseFrame)
+                  );
+              // Writes of compressed data must occur in order
+              ctx.write(frame, promise);
+            }
 
         } else if (msg instanceof HttpPingFrame) {
 
