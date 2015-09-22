@@ -750,7 +750,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
                     return;
                 }
             } else {
-                // This is a server initiated stream (Push)
+                // This is a locally initiated stream (Push)
                 boolean exclusive = httpHeadersFrame.isExclusive();
                 int dependency = httpHeadersFrame.getDependency();
                 int weight = httpHeadersFrame.getWeight();
