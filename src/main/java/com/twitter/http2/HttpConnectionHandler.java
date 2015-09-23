@@ -733,18 +733,24 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
             HttpHeadersFrame httpHeadersFrame = (HttpHeadersFrame) msg;
             int streamId = httpHeadersFrame.getStreamId();
 
-            if (streamId <= lastStreamId) {
-                // Frames must not be sent on half-closed (local) or closed streams
-                if (httpConnection.isLocalSideClosed(streamId)) {
+            if (isRemoteInitiatedId(streamId)) {
+                if (streamId <= lastStreamId) {
+                    // Attempting to send headers for an older stream
+                    // (older than the latest accepted remote initiated stream)
+                    // Ensure that the frames are not sent on a half-closed (local) or closed streams
+                    if (httpConnection.isLocalSideClosed(streamId)) {
+                        promise.setFailure(PROTOCOL_EXCEPTION);
+                        return;
+                    }
+                } else {
+                    // If we are attempting to write to a remote initiated stream id which is greater than the latest
+                    // accepted stream Id then we must throw a protocol exception! i.e we cannot write on a remote
+                    // initiated stream which we have not accepted before
                     promise.setFailure(PROTOCOL_EXCEPTION);
                     return;
                 }
             } else {
-                if (isRemoteInitiatedId(streamId)) {
-                    promise.setFailure(PROTOCOL_EXCEPTION);
-                    return;
-                }
-                // Try to accept the stream
+                // This is a locally initiated stream (Push)
                 boolean exclusive = httpHeadersFrame.isExclusive();
                 int dependency = httpHeadersFrame.getDependency();
                 int weight = httpHeadersFrame.getWeight();
