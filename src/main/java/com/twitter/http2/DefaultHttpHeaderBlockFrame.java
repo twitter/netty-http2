@@ -17,6 +17,7 @@ package com.twitter.http2;
 
 import java.util.Map;
 
+import io.netty.handler.codec.http.DefaultHttpHeaders;
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.util.internal.StringUtil;
 

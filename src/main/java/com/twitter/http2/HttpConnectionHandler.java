@@ -92,6 +92,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
     private boolean pushEnabled = true;
 
     private ChannelHandlerContext context;
+    private boolean debugEnabled = false;
 
     /**
      * Creates a new connection handler.
@@ -659,7 +660,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
 
             // Frames must not be sent on half-closed streams
             if (httpConnection.isLocalSideClosed(streamId)) {
-                promise.setFailure(PROTOCOL_EXCEPTION);
+                promise.setFailure(protocolException());
                 return;
             }
 
@@ -739,14 +740,14 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
                     // (older than the latest accepted remote initiated stream)
                     // Ensure that the frames are not sent on a half-closed (local) or closed streams
                     if (httpConnection.isLocalSideClosed(streamId)) {
-                        promise.setFailure(PROTOCOL_EXCEPTION);
+                        promise.setFailure(protocolException());
                         return;
                     }
                 } else {
                     // If we are attempting to write to a remote initiated stream id which is greater than the latest
                     // accepted stream Id then we must throw a protocol exception! i.e we cannot write on a remote
                     // initiated stream which we have not accepted before
-                    promise.setFailure(PROTOCOL_EXCEPTION);
+                    promise.setFailure(protocolException());
                     return;
                 }
             } else {
@@ -755,7 +756,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
                 int dependency = httpHeadersFrame.getDependency();
                 int weight = httpHeadersFrame.getWeight();
                 if (!acceptStream(streamId, exclusive, dependency, weight)) {
-                    promise.setFailure(PROTOCOL_EXCEPTION);
+                    promise.setFailure(protocolException());
                     return;
                 }
             }
@@ -810,7 +811,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
             HttpSettingsFrame httpSettingsFrame = (HttpSettingsFrame) msg;
             if (httpSettingsFrame.isAck()) {
                 // Cannot send an acknowledgement frame
-                promise.setFailure(PROTOCOL_EXCEPTION);
+                promise.setFailure(protocolException());
                 return;
             }
 
@@ -839,7 +840,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
         } else if (msg instanceof HttpPushPromiseFrame) {
 
             if (!pushEnabled) {
-                promise.setFailure(PROTOCOL_EXCEPTION);
+                promise.setFailure(protocolException());
                 return;
             }
 
@@ -859,7 +860,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
             HttpPingFrame httpPingFrame = (HttpPingFrame) msg;
             if (httpPingFrame.isPong()) {
                 // Cannot send a PONG frame
-                promise.setFailure(PROTOCOL_EXCEPTION);
+                promise.setFailure(protocolException());
             } else {
                 ByteBuf frame = httpFrameEncoder.encodePingFrame(httpPingFrame.getData(), false);
                 ctx.write(frame, promise);
@@ -869,7 +870,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
 
             // Why is this being sent? Intercept it and fail the write.
             // Should have sent a CLOSE ChannelStateEvent
-            promise.setFailure(PROTOCOL_EXCEPTION);
+            promise.setFailure(protocolException());
 
         } else if (msg instanceof HttpWindowUpdateFrame) {
 
@@ -878,7 +879,7 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
 
             if (handleStreamWindowUpdates || streamId == HTTP_CONNECTION_STREAM_ID) {
                 // Why is this being sent? Intercept it and fail the write.
-                promise.setFailure(PROTOCOL_EXCEPTION);
+                promise.setFailure(protocolException());
             } else {
                 int windowSizeIncrement = httpWindowUpdateFrame.getWindowSizeIncrement();
                 httpConnection.updateReceiveWindowSize(streamId, windowSizeIncrement);
@@ -890,6 +891,14 @@ public class HttpConnectionHandler extends ByteToMessageDecoder
 
             ctx.write(msg, promise);
         }
+    }
+
+    private HttpProtocolException protocolException() {
+        if (debugEnabled) {
+            return new HttpProtocolException();
+        }
+
+        return PROTOCOL_EXCEPTION;
     }
 
     @Override
