@@ -15,11 +15,10 @@
  */
 package com.twitter.http2;
 
-import java.util.Map;
-
-import io.netty.handler.codec.http.DefaultHttpHeaders;
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.util.internal.StringUtil;
+
+import java.util.Map;
 
 /**
  * The default {@link HttpHeaderBlockFrame} implementation.
@@ -29,7 +28,7 @@ public abstract class DefaultHttpHeaderBlockFrame extends DefaultHttpStreamFrame
 
     private boolean invalid;
     private boolean truncated;
-    private final HttpHeaders headers = new DefaultHttpHeaders();
+    private final HttpHeaders headers = new DefaultHttp2Headers();
 
     /**
      * Creates a new instance.
