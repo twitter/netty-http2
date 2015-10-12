@@ -16,6 +16,7 @@
 package com.twitter.http2;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufHolder;
 import io.netty.buffer.Unpooled;
 import io.netty.util.IllegalReferenceCountException;
 import io.netty.util.internal.StringUtil;
@@ -143,5 +144,17 @@ public class DefaultHttpDataFrame extends DefaultHttpStreamFrame implements Http
             buf.append(content().readableBytes());
         }
         return buf.toString();
+    }
+
+    @Override
+    public ByteBufHolder touch() {
+        data.touch();
+        return this;
+    }
+
+    @Override
+    public ByteBufHolder touch(Object o) {
+        data.touch(o);
+        return this;
     }
 }

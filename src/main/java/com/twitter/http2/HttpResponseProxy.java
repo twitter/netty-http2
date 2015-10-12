@@ -32,6 +32,7 @@ public class HttpResponseProxy extends HttpMessageProxy implements HttpResponse 
     }
 
     @Override
+    @Deprecated
     public HttpResponseStatus getStatus() {
         return response.getStatus();
     }
@@ -51,5 +52,10 @@ public class HttpResponseProxy extends HttpMessageProxy implements HttpResponse 
     @Override
     public String toString() {
         return response.toString();
+    }
+
+    @Override
+    public HttpResponseStatus status() {
+        return response.status();
     }
 }

@@ -17,6 +17,7 @@ package com.twitter.http2;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -148,8 +149,8 @@ public class HttpHeaderCompressionTest {
             HttpHeaders actual = ((HttpHeaderBlockFrame) msg).headers();
             HttpHeaders expected = frame.headers();
             for (String name : expected.names()) {
-                List<String> expectedValues = expected.getAll(name);
-                List<String> actualValues = actual.getAll(name);
+                List<String> expectedValues = new ArrayList<String>(expected.getAll(name));
+                List<String> actualValues = new ArrayList<String>(actual.getAll(name));
                 assertTrue(actualValues.containsAll(expectedValues));
                 actualValues.removeAll(expectedValues);
                 assertTrue(actualValues.isEmpty());

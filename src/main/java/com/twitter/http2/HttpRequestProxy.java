@@ -36,6 +36,7 @@ class HttpRequestProxy extends HttpMessageProxy implements HttpRequest {
     }
 
     @Override
+    @Deprecated
     public HttpMethod getMethod() {
         return request.getMethod();
     }
@@ -47,6 +48,7 @@ class HttpRequestProxy extends HttpMessageProxy implements HttpRequest {
     }
 
     @Override
+    @Deprecated
     public String getUri() {
         return request.getUri();
     }
@@ -66,5 +68,15 @@ class HttpRequestProxy extends HttpMessageProxy implements HttpRequest {
     @Override
     public String toString() {
         return request.toString();
+    }
+
+    @Override
+    public HttpMethod method() {
+        return request.method();
+    }
+
+    @Override
+    public String uri() {
+        return request.uri();
     }
 }

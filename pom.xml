@@ -58,7 +58,7 @@
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-codec-http</artifactId>
-            <version>4.0.25.Final</version>
+            <version>4.1.0.Beta7</version>
         </dependency>
         <!-- Test Deps -->
         <dependency>
