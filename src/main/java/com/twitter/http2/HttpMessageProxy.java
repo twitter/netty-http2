@@ -48,6 +48,7 @@ class HttpMessageProxy implements HttpMessage {
     }
 
     @Override
+    @Deprecated
     public DecoderResult getDecoderResult() {
         return message.getDecoderResult();
     }
@@ -55,5 +56,15 @@ class HttpMessageProxy implements HttpMessage {
     @Override
     public void setDecoderResult(DecoderResult result) {
         message.setDecoderResult(result);
+    }
+
+    @Override
+    public HttpVersion protocolVersion() {
+        return message.protocolVersion();
+    }
+
+    @Override
+    public DecoderResult decoderResult() {
+        return message.decoderResult();
     }
 }
